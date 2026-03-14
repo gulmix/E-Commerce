@@ -1,0 +1,10 @@
+go 1.25
+
+use (
+	./pkg
+	./proto/gen
+	./user-service
+	./product-service
+	./order-service
+	./api-gateway
+)

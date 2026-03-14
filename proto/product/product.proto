@@ -1,0 +1,64 @@
+syntax = "proto3";
+
+package product;
+
+option go_package = "ecommerce/proto/product";
+
+service ProductService {
+  rpc CreateProduct(CreateProductRequest) returns (CreateProductResponse);
+  rpc GetProduct(GetProductRequest) returns (GetProductResponse);
+  rpc ListProducts(ListProductsRequest) returns (ListProductsResponse);
+}
+
+message CreateProductRequest {
+  string name        = 1;
+  string description = 2;
+  double price       = 3;
+  int32  stock       = 4;
+  string category_id = 5;
+}
+
+message CreateProductResponse {
+  string product_id  = 1;
+  string name        = 2;
+  string description = 3;
+  double price       = 4;
+  int32  stock       = 5;
+  string category_id = 6;
+  string created_at  = 7;
+}
+
+message GetProductRequest {
+  string product_id = 1;
+}
+
+message GetProductResponse {
+  string product_id  = 1;
+  string name        = 2;
+  string description = 3;
+  double price       = 4;
+  int32  stock       = 5;
+  string category_id = 6;
+  string created_at  = 7;
+}
+
+message ListProductsRequest {
+  int32  page        = 1;
+  int32  page_size   = 2;
+  string category_id = 3; // optional filter
+}
+
+message ListProductsResponse {
+  repeated ProductItem products   = 1;
+  int32                total      = 2;
+  int32                page       = 3;
+  int32                page_size  = 4;
+}
+
+message ProductItem {
+  string product_id  = 1;
+  string name        = 2;
+  double price       = 3;
+  int32  stock       = 4;
+  string category_id = 5;
+}

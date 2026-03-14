@@ -1,0 +1,147 @@
+version: "3.9"
+
+services:
+  users-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       users_db
+      POSTGRES_USER:     users_user
+      POSTGRES_PASSWORD: users_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - users-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U users_user -d users_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  products-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       products_db
+      POSTGRES_USER:     products_user
+      POSTGRES_PASSWORD: products_pass
+    ports:
+      - "5433:5432"
+    volumes:
+      - products-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U products_user -d products_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  orders-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       orders_db
+      POSTGRES_USER:     orders_user
+      POSTGRES_PASSWORD: orders_pass
+    ports:
+      - "5434:5432"
+    volumes:
+      - orders-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U orders_user -d orders_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: rabbit
+      RABBITMQ_DEFAULT_PASS: rabbit_pass
+    ports:
+      - "5672:5672"  
+      - "15672:15672" 
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  user-service:
+    build:
+      context: .
+      dockerfile: user-service/Dockerfile
+    restart: unless-stopped
+    environment:
+      GRPC_PORT:              ":50051"
+      DB_DSN:                 "postgres://users_user:users_pass@users-db:5432/users_db?sslmode=disable"
+      LOG_LEVEL:              "info"
+      JWT_SECRET:             "change-me-to-a-secure-random-secret"
+      JWT_ACCESS_EXPIRY_MIN:  "15"
+      JWT_REFRESH_EXPIRY_HOURS: "168"
+    ports:
+      - "50051:50051"
+    depends_on:
+      users-db:
+        condition: service_healthy
+
+  product-service:
+    build:
+      context: .
+      dockerfile: product-service/Dockerfile
+    restart: unless-stopped
+    environment:
+      GRPC_PORT: ":50052"
+      DB_DSN:    "postgres://products_user:products_pass@products-db:5432/products_db?sslmode=disable"
+      LOG_LEVEL: "info"
+    ports:
+      - "50052:50052"
+    depends_on:
+      products-db:
+        condition: service_healthy
+
+  order-service:
+    build:
+      context: .
+      dockerfile: order-service/Dockerfile
+    restart: unless-stopped
+    environment:
+      GRPC_PORT:            ":50053"
+      DB_DSN:               "postgres://orders_user:orders_pass@orders-db:5432/orders_db?sslmode=disable"
+      LOG_LEVEL:            "info"
+      USER_SERVICE_ADDR:    "user-service:50051"
+      PRODUCT_SERVICE_ADDR: "product-service:50052"
+      RABBITMQ_URL:         "amqp://rabbit:rabbit_pass@rabbitmq:5672/"
+    ports:
+      - "50053:50053"
+    depends_on:
+      orders-db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: api-gateway/Dockerfile
+    restart: unless-stopped
+    environment:
+      HTTP_PORT:            ":8080"
+      USER_SERVICE_ADDR:    "user-service:50051"
+      PRODUCT_SERVICE_ADDR: "product-service:50052"
+      ORDER_SERVICE_ADDR:   "order-service:50053"
+      LOG_LEVEL:            "info"
+    ports:
+      - "8080:8080"
+    depends_on:
+      - user-service
+      - product-service
+      - order-service
+
+volumes:
+  users-db-data:
+  products-db-data:
+  orders-db-data:
+  rabbitmq-data:

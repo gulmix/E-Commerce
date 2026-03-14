@@ -1,0 +1,63 @@
+syntax = "proto3";
+
+package user;
+
+option go_package = "ecommerce/proto/user";
+
+service UserService {
+  rpc CreateUser(CreateUserRequest) returns (CreateUserResponse);
+  rpc LoginUser(LoginUserRequest) returns (LoginUserResponse);
+  rpc GetUser(GetUserRequest) returns (GetUserResponse);
+  rpc ValidateToken(ValidateTokenRequest) returns (ValidateTokenResponse);
+}
+
+message CreateUserRequest {
+  string email    = 1;
+  string password = 2;
+  string name     = 3;
+  string role     = 4; // "customer" | "admin"
+}
+
+message CreateUserResponse {
+  string user_id    = 1;
+  string email      = 2;
+  string name       = 3;
+  string role       = 4;
+  string created_at = 5;
+}
+
+message LoginUserRequest {
+  string email    = 1;
+  string password = 2;
+}
+
+message LoginUserResponse {
+  string access_token  = 1;
+  string refresh_token = 2;
+  string user_id       = 3;
+  string email         = 4;
+  string role          = 5;
+}
+
+message GetUserRequest {
+  string user_id = 1;
+}
+
+message GetUserResponse {
+  string user_id    = 1;
+  string email      = 2;
+  string name       = 3;
+  string role       = 4;
+  string created_at = 5;
+}
+
+message ValidateTokenRequest {
+  string token = 1;
+}
+
+message ValidateTokenResponse {
+  bool   valid   = 1;
+  string user_id = 2;
+  string email   = 3;
+  string role    = 4;
+}
