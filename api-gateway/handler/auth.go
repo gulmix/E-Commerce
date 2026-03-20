@@ -6,9 +6,6 @@ import (
 
 	"ecommerce/pkg/logger"
 	userpb "ecommerce/proto/user"
-
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 type AuthHandler struct {
@@ -28,10 +25,6 @@ type registerRequest struct {
 }
 
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
 	var req registerRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
@@ -59,10 +52,6 @@ type loginRequest struct {
 }
 
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
 	var req loginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
@@ -79,24 +68,4 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
-}
-
-func writeGRPCError(w http.ResponseWriter, err error) {
-	st, ok := status.FromError(err)
-	if !ok {
-		http.Error(w, "internal server error", http.StatusInternalServerError)
-		return
-	}
-	switch st.Code() {
-	case codes.AlreadyExists:
-		http.Error(w, st.Message(), http.StatusConflict)
-	case codes.Unauthenticated:
-		http.Error(w, st.Message(), http.StatusUnauthorized)
-	case codes.NotFound:
-		http.Error(w, st.Message(), http.StatusNotFound)
-	case codes.InvalidArgument:
-		http.Error(w, st.Message(), http.StatusBadRequest)
-	default:
-		http.Error(w, "internal server error", http.StatusInternalServerError)
-	}
 }

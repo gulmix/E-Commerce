@@ -7,6 +7,7 @@ option go_package = "ecommerce/proto/order";
 service OrderService {
   rpc CreateOrder(CreateOrderRequest) returns (CreateOrderResponse);
   rpc GetOrder(GetOrderRequest) returns (GetOrderResponse);
+  rpc ListUserOrders(ListUserOrdersRequest) returns (ListUserOrdersResponse);
   rpc UpdateOrderStatus(UpdateOrderStatusRequest) returns (UpdateOrderStatusResponse);
 }
 
@@ -50,6 +51,14 @@ message GetOrderResponse {
   repeated OrderItem items       = 5;
   string             created_at  = 6;
   string             updated_at  = 7;
+}
+
+message ListUserOrdersRequest {
+  string user_id = 1;
+}
+
+message ListUserOrdersResponse {
+  repeated GetOrderResponse orders = 1;
 }
 
 message UpdateOrderStatusRequest {

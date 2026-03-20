@@ -54,6 +54,7 @@ func (s *Server) GetProduct(ctx context.Context, req *productpb.GetProductReques
 		Stock:       p.Stock,
 		CategoryId:  p.CategoryID,
 		CreatedAt:   p.CreatedAt.Format(time.RFC3339),
+		Version:     p.Version,
 	}, nil
 }
 

@@ -1,10 +1,10 @@
 go 1.25
 
 use (
+	./api-gateway
+	./order-service
 	./pkg
+	./product-service
 	./proto/gen
 	./user-service
-	./product-service
-	./order-service
-	./api-gateway
 )

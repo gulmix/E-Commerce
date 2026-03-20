@@ -4,7 +4,7 @@ COPY go.work go.work.sum* ./
 COPY pkg/          pkg/
 COPY proto/gen/    proto/gen/
 COPY order-service/ order-service/
-RUN cd order-service && go build -o /bin/order-service .
+RUN cd order-service && go build -o /bin/order-service ./cmd/app
 
 FROM alpine:3.20
 RUN apk --no-cache add ca-certificates tzdata

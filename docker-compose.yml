@@ -133,6 +133,7 @@ services:
       PRODUCT_SERVICE_ADDR: "product-service:50052"
       ORDER_SERVICE_ADDR:   "order-service:50053"
       LOG_LEVEL:            "info"
+      RATE_LIMIT_RPM:       "100"
     ports:
       - "8080:8080"
     depends_on:

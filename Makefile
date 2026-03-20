@@ -19,5 +19,5 @@ tidy:
 build:
 	cd user-service    && go build ./cmd/app
 	cd product-service && go build ./cmd/app
-	cd order-service   && go build ./...
+	cd order-service   && go build ./cmd/app
 	cd api-gateway     && go build ./...

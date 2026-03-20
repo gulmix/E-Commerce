@@ -1,0 +1,456 @@
+openapi: "3.0.3"
+info:
+  title: E-Commerce API Gateway
+  description: Single HTTP entrypoint for the e-commerce microservices platform.
+  version: "1.0.0"
+
+servers:
+  - url: http://localhost:8080
+    description: Local development
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
+
+    RegisterRequest:
+      type: object
+      required: [email, password, name]
+      properties:
+        email:    { type: string, format: email }
+        password: { type: string, minLength: 8 }
+        name:     { type: string }
+        role:     { type: string, enum: [customer, admin], default: customer }
+
+    RegisterResponse:
+      type: object
+      properties:
+        user_id:    { type: string, format: uuid }
+        email:      { type: string }
+        name:       { type: string }
+        role:       { type: string }
+        created_at: { type: string, format: date-time }
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:    { type: string, format: email }
+        password: { type: string }
+
+    LoginResponse:
+      type: object
+      properties:
+        access_token:  { type: string }
+        refresh_token: { type: string }
+        user_id:       { type: string, format: uuid }
+        email:         { type: string }
+        role:          { type: string }
+
+    Product:
+      type: object
+      properties:
+        product_id:  { type: string, format: uuid }
+        name:        { type: string }
+        description: { type: string }
+        price:       { type: number, format: double }
+        stock:       { type: integer }
+        category_id: { type: string }
+        created_at:  { type: string, format: date-time }
+        version:     { type: integer }
+
+    CreateProductRequest:
+      type: object
+      required: [name, price, stock]
+      properties:
+        name:        { type: string }
+        description: { type: string }
+        price:       { type: number, format: double, minimum: 0 }
+        stock:       { type: integer, minimum: 0 }
+        category_id: { type: string }
+
+    UpdateProductRequest:
+      type: object
+      required: [name, price, stock, version]
+      properties:
+        name:        { type: string }
+        description: { type: string }
+        price:       { type: number, format: double, minimum: 0 }
+        stock:       { type: integer, minimum: 0 }
+        category_id: { type: string }
+        version:     { type: integer, description: Current version for optimistic locking }
+
+    ProductList:
+      type: object
+      properties:
+        products:
+          type: array
+          items: { $ref: "#/components/schemas/Product" }
+        total:     { type: integer }
+        page:      { type: integer }
+        page_size: { type: integer }
+
+    OrderStatus:
+      type: string
+      enum: [ORDER_STATUS_PENDING, ORDER_STATUS_CONFIRMED, ORDER_STATUS_SHIPPED, ORDER_STATUS_DELIVERED, ORDER_STATUS_CANCELLED]
+
+    OrderItem:
+      type: object
+      properties:
+        product_id: { type: string, format: uuid }
+        quantity:   { type: integer, minimum: 1 }
+        unit_price: { type: number, format: double }
+
+    Order:
+      type: object
+      properties:
+        order_id:    { type: string, format: uuid }
+        user_id:     { type: string, format: uuid }
+        status:      { $ref: "#/components/schemas/OrderStatus" }
+        total_price: { type: number, format: double }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/OrderItem" }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    CreateOrderRequest:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [product_id, quantity]
+            properties:
+              product_id: { type: string, format: uuid }
+              quantity:   { type: integer, minimum: 1 }
+
+    UpdateOrderStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [confirmed, shipped, delivered, cancelled]
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid JWT token
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: Insufficient permissions
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    TooManyRequests:
+      description: Rate limit exceeded
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      operationId: getHealth
+      tags: [Health]
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+
+  /auth/register:
+    post:
+      summary: Register a new user
+      operationId: register
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RegisterRequest" }
+      responses:
+        "201":
+          description: User created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RegisterResponse" }
+        "400": { description: Validation error }
+        "409": { description: Email already in use }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /auth/login:
+    post:
+      summary: Authenticate and obtain JWT tokens
+      operationId: login
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoginRequest" }
+      responses:
+        "200":
+          description: Tokens issued
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LoginResponse" }
+        "400": { description: Validation error }
+        "401": { description: Invalid credentials }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /products:
+    get:
+      summary: List products
+      operationId: listProducts
+      tags: [Products]
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: page_size
+          in: query
+          schema: { type: integer, default: 20, maximum: 100 }
+        - name: category_id
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: Paginated product list
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProductList" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    post:
+      summary: Create a product (admin only)
+      operationId: createProduct
+      tags: [Products]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateProductRequest" }
+      responses:
+        "201":
+          description: Product created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Product" }
+        "400": { description: Validation error }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /products/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: Get a product by ID
+      operationId: getProduct
+      tags: [Products]
+      responses:
+        "200":
+          description: Product detail
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Product" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    put:
+      summary: Update a product (admin only)
+      operationId: updateProduct
+      tags: [Products]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateProductRequest" }
+      responses:
+        "200":
+          description: Product updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Product" }
+        "400": { description: Validation error }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: Optimistic lock conflict — retry with latest version }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    delete:
+      summary: Delete a product (admin only)
+      operationId: deleteProduct
+      tags: [Products]
+      security:
+        - BearerAuth: []
+      responses:
+        "204": { description: Product deleted }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /orders:
+    get:
+      summary: List orders for the authenticated user
+      operationId: listOrders
+      tags: [Orders]
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Order list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  orders:
+                    type: array
+                    items: { $ref: "#/components/schemas/Order" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    post:
+      summary: Place a new order
+      operationId: createOrder
+      tags: [Orders]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateOrderRequest" }
+      responses:
+        "201":
+          description: Order created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "400": { description: Validation error or insufficient stock }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /orders/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: Get an order by ID
+      operationId: getOrder
+      tags: [Orders]
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Order detail
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /orders/{id}/status:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      summary: Advance an order through its status machine
+      operationId: updateOrderStatus
+      tags: [Orders]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateOrderStatusRequest" }
+      responses:
+        "200":
+          description: Status updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  order_id:   { type: string }
+                  status:     { $ref: "#/components/schemas/OrderStatus" }
+                  updated_at: { type: string, format: date-time }
+        "400": { description: Invalid status transition }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /swagger/openapi.yaml:
+    get:
+      summary: OpenAPI 3.0 specification
+      operationId: getOpenAPISpec
+      tags: [Docs]
+      responses:
+        "200":
+          description: YAML spec
+          content:
+            application/yaml:
+              schema: { type: string }
+
+  /swagger/:
+    get:
+      summary: Swagger UI
+      operationId: getSwaggerUI
+      tags: [Docs]
+      responses:
+        "200":
+          description: HTML page rendering the Swagger UI
+          content:
+            text/html:
+              schema: { type: string }

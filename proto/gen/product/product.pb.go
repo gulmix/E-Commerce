@@ -242,6 +242,7 @@ type GetProductResponse struct {
 	Stock         int32                  `protobuf:"varint,5,opt,name=stock,proto3" json:"stock,omitempty"`
 	CategoryId    string                 `protobuf:"bytes,6,opt,name=category_id,json=categoryId,proto3" json:"category_id,omitempty"`
 	CreatedAt     string                 `protobuf:"bytes,7,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	Version       int32                  `protobuf:"varint,8,opt,name=version,proto3" json:"version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -323,6 +324,13 @@ func (x *GetProductResponse) GetCreatedAt() string {
 		return x.CreatedAt
 	}
 	return ""
+}
+
+func (x *GetProductResponse) GetVersion() int32 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
 }
 
 type ListProductsRequest struct {
@@ -826,7 +834,7 @@ const file_proto_product_product_proto_rawDesc = "" +
 	"created_at\x18\a \x01(\tR\tcreatedAt\"2\n" +
 	"\x11GetProductRequest\x12\x1d\n" +
 	"\n" +
-	"product_id\x18\x01 \x01(\tR\tproductId\"\xd5\x01\n" +
+	"product_id\x18\x01 \x01(\tR\tproductId\"\xef\x01\n" +
 	"\x12GetProductResponse\x12\x1d\n" +
 	"\n" +
 	"product_id\x18\x01 \x01(\tR\tproductId\x12\x12\n" +
@@ -837,7 +845,8 @@ const file_proto_product_product_proto_rawDesc = "" +
 	"\vcategory_id\x18\x06 \x01(\tR\n" +
 	"categoryId\x12\x1d\n" +
 	"\n" +
-	"created_at\x18\a \x01(\tR\tcreatedAt\"g\n" +
+	"created_at\x18\a \x01(\tR\tcreatedAt\x12\x18\n" +
+	"\aversion\x18\b \x01(\x05R\aversion\"g\n" +
 	"\x13ListProductsRequest\x12\x12\n" +
 	"\x04page\x18\x01 \x01(\x05R\x04page\x12\x1b\n" +
 	"\tpage_size\x18\x02 \x01(\x05R\bpageSize\x12\x1f\n" +
