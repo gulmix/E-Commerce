@@ -11,6 +11,7 @@ import (
 	"ecommerce/api-gateway/handler"
 	"ecommerce/pkg/config"
 	"ecommerce/pkg/logger"
+	productpb "ecommerce/proto/product"
 	userpb "ecommerce/proto/user"
 
 	"google.golang.org/grpc"
@@ -50,6 +51,16 @@ func main() {
 
 	userClient := userpb.NewUserServiceClient(userConn)
 
+	productConn, err := grpc.NewClient(cfg.ProductSvcAddr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to dial product-service")
+	}
+	defer productConn.Close()
+
+	productClient := productpb.NewProductServiceClient(productConn)
+
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -60,6 +71,10 @@ func main() {
 	authH := handler.NewAuthHandler(userClient, log)
 	mux.HandleFunc("/auth/register", authH.Register)
 	mux.HandleFunc("/auth/login", authH.Login)
+
+	productH := handler.NewProductHandler(productClient, log)
+	mux.Handle("/products", productH)
+	mux.Handle("/products/", productH)
 
 	srv := &http.Server{
 		Addr:         cfg.HTTPPort,
