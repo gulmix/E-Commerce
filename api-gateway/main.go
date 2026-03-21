@@ -12,13 +12,20 @@ import (
 	"ecommerce/api-gateway/handler"
 	apimw "ecommerce/api-gateway/middleware"
 	"ecommerce/pkg/config"
+	"ecommerce/pkg/health"
 	"ecommerce/pkg/logger"
+	"ecommerce/pkg/metrics"
+	"ecommerce/pkg/resilience"
+	"ecommerce/pkg/telemetry"
 	orderpb "ecommerce/proto/order"
 	productpb "ecommerce/proto/product"
 	userpb "ecommerce/proto/user"
 
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
+	"github.com/sony/gobreaker"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -33,6 +40,7 @@ type Config struct {
 	OrderSvcAddr    string `mapstructure:"ORDER_SERVICE_ADDR"`
 	LogLevel        string `mapstructure:"LOG_LEVEL"`
 	RateLimitRPM    int    `mapstructure:"RATE_LIMIT_RPM"`
+	OTELEndpoint    string `mapstructure:"OTEL_ENDPOINT"`
 }
 
 func main() {
@@ -54,25 +62,27 @@ func main() {
 	log := logger.New(cfg.LogLevel, true)
 	log.Info().Str("port", cfg.HTTPPort).Msg("starting api-gateway")
 
-	userConn, err := grpc.NewClient(cfg.UserServiceAddr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	tracerShutdown, err := telemetry.InitTracer(ctx, "api-gateway", cfg.OTELEndpoint)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to init tracer")
+	}
+
+	userConn, err := dialService(cfg.UserServiceAddr, resilience.NewBreaker("gw->user"))
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to dial user-service")
 	}
 	defer userConn.Close()
 
-	productConn, err := grpc.NewClient(cfg.ProductSvcAddr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
+	productConn, err := dialService(cfg.ProductSvcAddr, resilience.NewBreaker("gw->product"))
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to dial product-service")
 	}
 	defer productConn.Close()
 
-	orderConn, err := grpc.NewClient(cfg.OrderSvcAddr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
+	orderConn, err := dialService(cfg.OrderSvcAddr, resilience.NewBreaker("gw->order"))
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to dial order-service")
 	}
@@ -92,10 +102,11 @@ func main() {
 	r.Use(chimw.Recoverer)
 	r.Use(apimw.RateLimit(cfg.RateLimitRPM))
 
-	r.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"status":"ok"}`))
-	})
+	r.Get("/health", health.LivenessHandler())
+	r.Get("/ready", health.LivenessHandler())
+
+	r.Handle("/metrics", metrics.Handler())
+
 	r.Post("/auth/register", authH.Register)
 	r.Post("/auth/login", authH.Login)
 
@@ -125,7 +136,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:         cfg.HTTPPort,
-		Handler:      r,
+		Handler:      otelhttp.NewHandler(r, "api-gateway"),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 	}
@@ -141,9 +152,55 @@ func main() {
 	<-quit
 
 	log.Info().Msg("shutting down api-gateway")
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	_ = srv.Shutdown(ctx)
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer shutdownCancel()
+	_ = srv.Shutdown(shutdownCtx)
+	_ = tracerShutdown(shutdownCtx)
+}
+
+func dialService(addr string, cb *gobreaker.CircuitBreaker) (*grpc.ClientConn, error) {
+	return grpc.NewClient(addr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
+		grpc.WithChainUnaryInterceptor(
+			circuitBreakerInterceptor(cb),
+			timeoutInterceptor(5*time.Second),
+		),
+	)
+}
+
+func circuitBreakerInterceptor(cb *gobreaker.CircuitBreaker) grpc.UnaryClientInterceptor {
+	return func(
+		ctx context.Context,
+		method string,
+		req, reply interface{},
+		cc *grpc.ClientConn,
+		invoker grpc.UnaryInvoker,
+		opts ...grpc.CallOption,
+	) error {
+		_, err := cb.Execute(func() (interface{}, error) {
+			return nil, invoker(ctx, method, req, reply, cc, opts...)
+		})
+		return err
+	}
+}
+
+func timeoutInterceptor(timeout time.Duration) grpc.UnaryClientInterceptor {
+	return func(
+		ctx context.Context,
+		method string,
+		req, reply interface{},
+		cc *grpc.ClientConn,
+		invoker grpc.UnaryInvoker,
+		opts ...grpc.CallOption,
+	) error {
+		if _, ok := ctx.Deadline(); !ok {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, timeout)
+			defer cancel()
+		}
+		return invoker(ctx, method, req, reply, cc, opts...)
+	}
 }
 
 var swaggerUIHTML = []byte(`<!DOCTYPE html>

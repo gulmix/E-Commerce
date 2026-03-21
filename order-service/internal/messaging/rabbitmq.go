@@ -9,7 +9,6 @@ import (
 
 const exchange = "orders"
 
-// Publisher publishes order events to RabbitMQ.
 type Publisher struct {
 	conn    *amqp.Connection
 	channel *amqp.Channel

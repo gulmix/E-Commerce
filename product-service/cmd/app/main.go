@@ -3,25 +3,32 @@ package main
 import (
 	"context"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"ecommerce/pkg/config"
+	"ecommerce/pkg/health"
 	"ecommerce/pkg/logger"
-	productpb "ecommerce/proto/product"
+	"ecommerce/pkg/metrics"
+	"ecommerce/pkg/telemetry"
 	internalcfg "ecommerce/product-service/internal/config"
 	grpcserver "ecommerce/product-service/internal/grpc"
 	"ecommerce/product-service/internal/repository"
 	"ecommerce/product-service/internal/service"
+	productpb "ecommerce/proto/product"
 
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 )
 
 func main() {
 	cfg := internalcfg.Config{
-		GRPCPort: ":50052",
-		LogLevel: "info",
+		GRPCPort:    ":50052",
+		MetricsPort: ":9092",
+		LogLevel:    "info",
 	}
 	if err := config.Load(&cfg); err != nil {
 		panic("failed to load config: " + err.Error())
@@ -33,9 +40,20 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	tracerShutdown, err := telemetry.InitTracer(ctx, "product-service", cfg.OTELEndpoint)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to init tracer")
+	}
+
 	repo, err := repository.NewPostgres(ctx, cfg.DBDsn)
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to connect to database")
+	}
+
+	type pinger interface{ Ping(context.Context) error }
+	var dbPing health.Checker
+	if p, ok := repo.(pinger); ok {
+		dbPing = p.Ping
 	}
 
 	if c, ok := repo.(interface{ Close() }); ok {
@@ -49,12 +67,30 @@ func main() {
 		log.Fatal().Err(err).Msg("failed to listen")
 	}
 
-	srv := grpc.NewServer()
-	productpb.RegisterProductServiceServer(srv, grpcserver.NewServer(svc, log))
+	grpcSrv := grpc.NewServer(
+		grpc.StatsHandler(otelgrpc.NewServerHandler()),
+		grpc.ChainUnaryInterceptor(metrics.NewServerInterceptor("product_service")),
+	)
+	productpb.RegisterProductServiceServer(grpcSrv, grpcserver.NewServer(svc, log))
+
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", metrics.Handler())
+	mux.HandleFunc("/health", health.LivenessHandler())
+	if dbPing != nil {
+		mux.HandleFunc("/ready", health.ReadinessHandler(dbPing))
+	} else {
+		mux.HandleFunc("/ready", health.LivenessHandler())
+	}
+	httpSrv := &http.Server{Addr: cfg.MetricsPort, Handler: mux}
 
 	go func() {
-		if err := srv.Serve(lis); err != nil {
+		if err := grpcSrv.Serve(lis); err != nil {
 			log.Fatal().Err(err).Msg("grpc server error")
+		}
+	}()
+	go func() {
+		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Error().Err(err).Msg("metrics/health server error")
 		}
 	}()
 
@@ -63,5 +99,10 @@ func main() {
 	<-quit
 
 	log.Info().Msg("shutting down product-service")
-	srv.GracefulStop()
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer shutdownCancel()
+
+	_ = httpSrv.Shutdown(shutdownCtx)
+	grpcSrv.GracefulStop()
+	_ = tracerShutdown(shutdownCtx)
 }

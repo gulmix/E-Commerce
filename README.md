@@ -9,8 +9,11 @@ Go-based microservices platform for e-commerce: services for users, products, an
 - **Language:** Go
 - **Transport:** gRPC (inter-service) + REST/HTTP (API Gateway)
 - **Database:** PostgreSQL (per service, isolated schemas)
-- **Message Broker:** RabbitMQ / Kafka (async events)
+- **Message Broker:** RabbitMQ (async events)
 - **Auth:** JWT
+- **Metrics:** Prometheus + Grafana
+- **Tracing:** OpenTelemetry + Jaeger (OTLP)
+- **Resilience:** circuit breaker (sony/gobreaker), retry, per-call timeout
 - **Containerization:** Docker + Docker Compose
 - **Orchestration (later):** Kubernetes
 
@@ -25,7 +28,9 @@ E-Commerce/
 ├── product-service/      # Catalog, categories, inventory
 ├── order-service/        # Cart, orders, order lifecycle
 ├── proto/                # Shared .proto files (gRPC contracts)
-├── pkg/                  # Shared libraries (logger, errors, config)
+├── pkg/                  # Shared libraries (logger, errors, config, metrics, telemetry, health, resilience)
+├── prometheus/           # Prometheus scrape config
+├── grafana/              # Grafana datasource provisioning
 ├── docker-compose.yml
 └── README.md
 ```
@@ -57,6 +62,11 @@ docker-compose up --build
 
 # API is available at
 http://localhost:8080
+
+# Observability UIs
+http://localhost:16686   # Jaeger traces
+http://localhost:9090    # Prometheus
+http://localhost:3000    # Grafana  (admin / admin)
 ```
 
 ---

@@ -59,8 +59,8 @@ services:
       RABBITMQ_DEFAULT_USER: rabbit
       RABBITMQ_DEFAULT_PASS: rabbit_pass
     ports:
-      - "5672:5672"  
-      - "15672:15672" 
+      - "5672:5672"
+      - "15672:15672"
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq
     healthcheck:
@@ -69,22 +69,72 @@ services:
       timeout: 5s
       retries: 5
 
+  jaeger:
+    image: jaegertracing/all-in-one:1.57
+    restart: unless-stopped
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686"  
+      - "4317:4317"  
+      - "4318:4318"   
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:14269/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  prometheus:
+    image: prom/prometheus:v2.51.2
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+
+  grafana:
+    image: grafana/grafana:10.4.2
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER:     admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP:     "false"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+      - jaeger
+
   user-service:
     build:
       context: .
       dockerfile: user-service/Dockerfile
     restart: unless-stopped
     environment:
-      GRPC_PORT:              ":50051"
-      DB_DSN:                 "postgres://users_user:users_pass@users-db:5432/users_db?sslmode=disable"
-      LOG_LEVEL:              "info"
-      JWT_SECRET:             "change-me-to-a-secure-random-secret"
-      JWT_ACCESS_EXPIRY_MIN:  "15"
+      GRPC_PORT:                ":50051"
+      METRICS_PORT:             ":9091"
+      DB_DSN:                   "postgres://users_user:users_pass@users-db:5432/users_db?sslmode=disable"
+      LOG_LEVEL:                "info"
+      JWT_SECRET:               "change-me-to-a-secure-random-secret"
+      JWT_ACCESS_EXPIRY_MIN:    "15"
       JWT_REFRESH_EXPIRY_HOURS: "168"
+      OTEL_ENDPOINT:            "jaeger:4317"
     ports:
       - "50051:50051"
+      - "9091:9091"
     depends_on:
       users-db:
+        condition: service_healthy
+      jaeger:
         condition: service_healthy
 
   product-service:
@@ -93,13 +143,18 @@ services:
       dockerfile: product-service/Dockerfile
     restart: unless-stopped
     environment:
-      GRPC_PORT: ":50052"
-      DB_DSN:    "postgres://products_user:products_pass@products-db:5432/products_db?sslmode=disable"
-      LOG_LEVEL: "info"
+      GRPC_PORT:    ":50052"
+      METRICS_PORT: ":9092"
+      DB_DSN:       "postgres://products_user:products_pass@products-db:5432/products_db?sslmode=disable"
+      LOG_LEVEL:    "info"
+      OTEL_ENDPOINT: "jaeger:4317"
     ports:
       - "50052:50052"
+      - "9092:9092"
     depends_on:
       products-db:
+        condition: service_healthy
+      jaeger:
         condition: service_healthy
 
   order-service:
@@ -109,17 +164,22 @@ services:
     restart: unless-stopped
     environment:
       GRPC_PORT:            ":50053"
+      METRICS_PORT:         ":9093"
       DB_DSN:               "postgres://orders_user:orders_pass@orders-db:5432/orders_db?sslmode=disable"
       LOG_LEVEL:            "info"
       USER_SERVICE_ADDR:    "user-service:50051"
       PRODUCT_SERVICE_ADDR: "product-service:50052"
       RABBITMQ_URL:         "amqp://rabbit:rabbit_pass@rabbitmq:5672/"
+      OTEL_ENDPOINT:        "jaeger:4317"
     ports:
       - "50053:50053"
+      - "9093:9093"
     depends_on:
       orders-db:
         condition: service_healthy
       rabbitmq:
+        condition: service_healthy
+      jaeger:
         condition: service_healthy
 
   api-gateway:
@@ -134,15 +194,19 @@ services:
       ORDER_SERVICE_ADDR:   "order-service:50053"
       LOG_LEVEL:            "info"
       RATE_LIMIT_RPM:       "100"
+      OTEL_ENDPOINT:        "jaeger:4317"
     ports:
       - "8080:8080"
     depends_on:
       - user-service
       - product-service
       - order-service
+      - jaeger
 
 volumes:
   users-db-data:
   products-db-data:
   orders-db-data:
   rabbitmq-data:
+  prometheus-data:
+  grafana-data:

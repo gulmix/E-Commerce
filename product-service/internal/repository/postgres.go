@@ -35,6 +35,10 @@ func (r *postgresRepo) Close() {
 	r.pool.Close()
 }
 
+func (r *postgresRepo) Ping(ctx context.Context) error {
+	return r.pool.Ping(ctx)
+}
+
 func (r *postgresRepo) migrate(ctx context.Context) error {
 	_, err := r.pool.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS categories (
