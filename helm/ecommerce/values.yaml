@@ -1,0 +1,213 @@
+# Global settings
+global:
+  imageRegistry: "ghcr.io/OWNER"
+  imageTag: "latest"
+  imagePullPolicy: IfNotPresent
+  namespace: ecommerce
+
+# User Service
+userService:
+  image: "ecommerce-user-service"
+  replicas: 2
+  grpcPort: 50051
+  metricsPort: 9091
+  config:
+    logLevel: "info"
+    jwtAccessExpiryMin: "15"
+    jwtRefreshExpiryHours: "168"
+    otelEndpoint: "jaeger:4317"
+  secrets:
+    dbDsn: "postgres://users_user:users_pass@postgres-users:5432/users_db?sslmode=disable"
+    jwtSecret: "change-me-to-a-secure-random-secret"
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+
+# Product Service
+productService:
+  image: "ecommerce-product-service"
+  replicas: 2
+  grpcPort: 50052
+  metricsPort: 9092
+  config:
+    logLevel: "info"
+    otelEndpoint: "jaeger:4317"
+  secrets:
+    dbDsn: "postgres://products_user:products_pass@postgres-products:5432/products_db?sslmode=disable"
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+
+# Order Service
+orderService:
+  image: "ecommerce-order-service"
+  replicas: 2
+  grpcPort: 50053
+  metricsPort: 9093
+  config:
+    logLevel: "info"
+    userServiceAddr: "user-service:50051"
+    productServiceAddr: "product-service:50052"
+    otelEndpoint: "jaeger:4317"
+  secrets:
+    dbDsn: "postgres://orders_user:orders_pass@postgres-orders:5432/orders_db?sslmode=disable"
+    rabbitmqUrl: "amqp://rabbit:rabbit_pass@rabbitmq:5672/"
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+
+# API Gateway
+apiGateway:
+  image: "ecommerce-api-gateway"
+  replicas: 2
+  httpPort: 8080
+  config:
+    logLevel: "info"
+    rateLimitRpm: "100"
+    userServiceAddr: "user-service:50051"
+    productServiceAddr: "product-service:50052"
+    orderServiceAddr: "order-service:50053"
+    otelEndpoint: "jaeger:4317"
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+
+# PostgreSQL — Users DB
+postgresUsers:
+  image: "postgres:16-alpine"
+  storage: "5Gi"
+  secrets:
+    postgresDb: "users_db"
+    postgresUser: "users_user"
+    postgresPassword: "users_pass"
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "1Gi"
+
+# PostgreSQL — Products DB
+postgresProducts:
+  image: "postgres:16-alpine"
+  storage: "5Gi"
+  secrets:
+    postgresDb: "products_db"
+    postgresUser: "products_user"
+    postgresPassword: "products_pass"
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "1Gi"
+
+# PostgreSQL — Orders DB
+postgresOrders:
+  image: "postgres:16-alpine"
+  storage: "5Gi"
+  secrets:
+    postgresDb: "orders_db"
+    postgresUser: "orders_user"
+    postgresPassword: "orders_pass"
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "1Gi"
+
+# RabbitMQ
+rabbitmq:
+  image: "rabbitmq:3.13-management-alpine"
+  storage: "2Gi"
+  secrets:
+    defaultUser: "rabbit"
+    defaultPass: "rabbit_pass"
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+
+# Jaeger
+jaeger:
+  enabled: true
+  image: "jaegertracing/all-in-one:1.57"
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+
+# Prometheus
+prometheus:
+  enabled: true
+  image: "prom/prometheus:v2.51.2"
+  storage: "10Gi"
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "1Gi"
+
+# Grafana
+grafana:
+  enabled: true
+  image: "grafana/grafana:10.4.2"
+  storage: "2Gi"
+  adminUser: "admin"
+  adminPassword: "admin"
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "256Mi"
+
+# Ingress
+ingress:
+  enabled: true
+  className: "nginx"
+  host: "ecommerce.local"
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"

@@ -1,0 +1,99 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: user-service-config
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: user-service
+    {{- include "ecommerce.labels" . | nindent 4 }}
+data:
+  GRPC_PORT: ":{{ .Values.userService.grpcPort }}"
+  METRICS_PORT: ":{{ .Values.userService.metricsPort }}"
+  LOG_LEVEL: {{ .Values.userService.config.logLevel | quote }}
+  JWT_ACCESS_EXPIRY_MIN: {{ .Values.userService.config.jwtAccessExpiryMin | quote }}
+  JWT_REFRESH_EXPIRY_HOURS: {{ .Values.userService.config.jwtRefreshExpiryHours | quote }}
+  OTEL_ENDPOINT: {{ .Values.userService.config.otelEndpoint | quote }}
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: user-service-secret
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: user-service
+    {{- include "ecommerce.labels" . | nindent 4 }}
+type: Opaque
+stringData:
+  DB_DSN: {{ .Values.userService.secrets.dbDsn | quote }}
+  JWT_SECRET: {{ .Values.userService.secrets.jwtSecret | quote }}
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: user-service
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: user-service
+    {{- include "ecommerce.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.userService.replicas }}
+  selector:
+    matchLabels:
+      app: user-service
+  template:
+    metadata:
+      labels:
+        app: user-service
+    spec:
+      containers:
+        - name: user-service
+          image: {{ include "ecommerce.image" (dict "registry" .Values.global.imageRegistry "image" .Values.userService.image "tag" .Values.global.imageTag) }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - name: grpc
+              containerPort: {{ .Values.userService.grpcPort }}
+            - name: metrics
+              containerPort: {{ .Values.userService.metricsPort }}
+          envFrom:
+            - configMapRef:
+                name: user-service-config
+            - secretRef:
+                name: user-service-secret
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: {{ .Values.userService.metricsPort }}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.userService.metricsPort }}
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.userService.resources | nindent 12 }}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: user-service
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: user-service
+    {{- include "ecommerce.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: user-service
+  ports:
+    - name: grpc
+      port: {{ .Values.userService.grpcPort }}
+      targetPort: {{ .Values.userService.grpcPort }}
+    - name: metrics
+      port: {{ .Values.userService.metricsPort }}
+      targetPort: {{ .Values.userService.metricsPort }}

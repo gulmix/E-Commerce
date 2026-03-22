@@ -1,0 +1,128 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: product-service-config
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: product-service
+    {{- include "ecommerce.labels" . | nindent 4 }}
+data:
+  GRPC_PORT: ":{{ .Values.productService.grpcPort }}"
+  METRICS_PORT: ":{{ .Values.productService.metricsPort }}"
+  LOG_LEVEL: {{ .Values.productService.config.logLevel | quote }}
+  OTEL_ENDPOINT: {{ .Values.productService.config.otelEndpoint | quote }}
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: product-service-secret
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: product-service
+    {{- include "ecommerce.labels" . | nindent 4 }}
+type: Opaque
+stringData:
+  DB_DSN: {{ .Values.productService.secrets.dbDsn | quote }}
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: product-service
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: product-service
+    {{- include "ecommerce.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.productService.replicas }}
+  selector:
+    matchLabels:
+      app: product-service
+  template:
+    metadata:
+      labels:
+        app: product-service
+    spec:
+      containers:
+        - name: product-service
+          image: {{ include "ecommerce.image" (dict "registry" .Values.global.imageRegistry "image" .Values.productService.image "tag" .Values.global.imageTag) }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - name: grpc
+              containerPort: {{ .Values.productService.grpcPort }}
+            - name: metrics
+              containerPort: {{ .Values.productService.metricsPort }}
+          envFrom:
+            - configMapRef:
+                name: product-service-config
+            - secretRef:
+                name: product-service-secret
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: {{ .Values.productService.metricsPort }}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.productService.metricsPort }}
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.productService.resources | nindent 12 }}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: product-service
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: product-service
+    {{- include "ecommerce.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: product-service
+  ports:
+    - name: grpc
+      port: {{ .Values.productService.grpcPort }}
+      targetPort: {{ .Values.productService.grpcPort }}
+    - name: metrics
+      port: {{ .Values.productService.metricsPort }}
+      targetPort: {{ .Values.productService.metricsPort }}
+
+{{- if .Values.productService.hpa.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: product-service-hpa
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: product-service
+    {{- include "ecommerce.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: product-service
+  minReplicas: {{ .Values.productService.hpa.minReplicas }}
+  maxReplicas: {{ .Values.productService.hpa.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.productService.hpa.targetCPUUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.productService.hpa.targetMemoryUtilizationPercentage }}
+{{- end }}

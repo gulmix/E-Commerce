@@ -1,0 +1,131 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: order-service-config
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: order-service
+    {{- include "ecommerce.labels" . | nindent 4 }}
+data:
+  GRPC_PORT: ":{{ .Values.orderService.grpcPort }}"
+  METRICS_PORT: ":{{ .Values.orderService.metricsPort }}"
+  LOG_LEVEL: {{ .Values.orderService.config.logLevel | quote }}
+  USER_SERVICE_ADDR: {{ .Values.orderService.config.userServiceAddr | quote }}
+  PRODUCT_SERVICE_ADDR: {{ .Values.orderService.config.productServiceAddr | quote }}
+  OTEL_ENDPOINT: {{ .Values.orderService.config.otelEndpoint | quote }}
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: order-service-secret
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: order-service
+    {{- include "ecommerce.labels" . | nindent 4 }}
+type: Opaque
+stringData:
+  DB_DSN: {{ .Values.orderService.secrets.dbDsn | quote }}
+  RABBITMQ_URL: {{ .Values.orderService.secrets.rabbitmqUrl | quote }}
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-service
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: order-service
+    {{- include "ecommerce.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.orderService.replicas }}
+  selector:
+    matchLabels:
+      app: order-service
+  template:
+    metadata:
+      labels:
+        app: order-service
+    spec:
+      containers:
+        - name: order-service
+          image: {{ include "ecommerce.image" (dict "registry" .Values.global.imageRegistry "image" .Values.orderService.image "tag" .Values.global.imageTag) }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - name: grpc
+              containerPort: {{ .Values.orderService.grpcPort }}
+            - name: metrics
+              containerPort: {{ .Values.orderService.metricsPort }}
+          envFrom:
+            - configMapRef:
+                name: order-service-config
+            - secretRef:
+                name: order-service-secret
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: {{ .Values.orderService.metricsPort }}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.orderService.metricsPort }}
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.orderService.resources | nindent 12 }}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: order-service
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: order-service
+    {{- include "ecommerce.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: order-service
+  ports:
+    - name: grpc
+      port: {{ .Values.orderService.grpcPort }}
+      targetPort: {{ .Values.orderService.grpcPort }}
+    - name: metrics
+      port: {{ .Values.orderService.metricsPort }}
+      targetPort: {{ .Values.orderService.metricsPort }}
+
+{{- if .Values.orderService.hpa.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: order-service-hpa
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: order-service
+    {{- include "ecommerce.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: order-service
+  minReplicas: {{ .Values.orderService.hpa.minReplicas }}
+  maxReplicas: {{ .Values.orderService.hpa.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.orderService.hpa.targetCPUUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.orderService.hpa.targetMemoryUtilizationPercentage }}
+{{- end }}

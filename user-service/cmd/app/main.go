@@ -43,13 +43,11 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// ── Tracing ──────────────────────────────────────────────────────────────
 	tracerShutdown, err := telemetry.InitTracer(ctx, "user-service", cfg.OTELEndpoint)
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to init tracer")
 	}
 
-	// ── Database ─────────────────────────────────────────────────────────────
 	repo, err := repository.NewPostgres(ctx, cfg.DBDsn)
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to connect to database")
@@ -65,14 +63,12 @@ func main() {
 		defer c.Close()
 	}
 
-	// ── Service ───────────────────────────────────────────────────────────────
 	svc := service.New(repo, service.Config{
 		JWTSecret:     cfg.JWTSecret,
 		AccessExpiry:  time.Duration(cfg.AccessExpiryMin) * time.Minute,
 		RefreshExpiry: time.Duration(cfg.RefreshExpiryHours) * time.Hour,
 	})
 
-	// ── gRPC server ───────────────────────────────────────────────────────────
 	lis, err := net.Listen("tcp", cfg.GRPCPort)
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to listen")
@@ -84,7 +80,6 @@ func main() {
 	)
 	userpb.RegisterUserServiceServer(grpcSrv, grpcserver.NewServer(svc, log))
 
-	// ── Side HTTP server (health + metrics) ───────────────────────────────────
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", metrics.Handler())
 	mux.HandleFunc("/health", health.LivenessHandler())
@@ -95,7 +90,6 @@ func main() {
 	}
 	httpSrv := &http.Server{Addr: cfg.MetricsPort, Handler: mux}
 
-	// ── Start servers ─────────────────────────────────────────────────────────
 	go func() {
 		if err := grpcSrv.Serve(lis); err != nil {
 			log.Fatal().Err(err).Msg("grpc server error")
@@ -107,7 +101,6 @@ func main() {
 		}
 	}()
 
-	// ── Graceful shutdown ─────────────────────────────────────────────────────
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGTERM, syscall.SIGINT)
 	<-quit

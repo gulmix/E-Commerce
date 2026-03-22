@@ -1,0 +1,269 @@
+{{/* ── Users DB ── */}}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-users-secret
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: postgres-users
+    {{- include "ecommerce.labels" . | nindent 4 }}
+type: Opaque
+stringData:
+  POSTGRES_DB: {{ .Values.postgresUsers.secrets.postgresDb | quote }}
+  POSTGRES_USER: {{ .Values.postgresUsers.secrets.postgresUser | quote }}
+  POSTGRES_PASSWORD: {{ .Values.postgresUsers.secrets.postgresPassword | quote }}
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-users-pvc
+  namespace: {{ .Values.global.namespace }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.postgresUsers.storage }}
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres-users
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: postgres-users
+    {{- include "ecommerce.labels" . | nindent 4 }}
+spec:
+  serviceName: postgres-users
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres-users
+  template:
+    metadata:
+      labels:
+        app: postgres-users
+    spec:
+      containers:
+        - name: postgres
+          image: {{ .Values.postgresUsers.image }}
+          ports:
+            - containerPort: 5432
+          envFrom:
+            - secretRef:
+                name: postgres-users-secret
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", {{ .Values.postgresUsers.secrets.postgresUser | quote }}, "-d", {{ .Values.postgresUsers.secrets.postgresDb | quote }}]
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 5
+          resources:
+            {{- toYaml .Values.postgresUsers.resources | nindent 12 }}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: postgres-users-pvc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-users
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: postgres-users
+    {{- include "ecommerce.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: postgres-users
+  ports:
+    - port: 5432
+      targetPort: 5432
+  clusterIP: None
+
+{{/* ── Products DB ── */}}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-products-secret
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: postgres-products
+    {{- include "ecommerce.labels" . | nindent 4 }}
+type: Opaque
+stringData:
+  POSTGRES_DB: {{ .Values.postgresProducts.secrets.postgresDb | quote }}
+  POSTGRES_USER: {{ .Values.postgresProducts.secrets.postgresUser | quote }}
+  POSTGRES_PASSWORD: {{ .Values.postgresProducts.secrets.postgresPassword | quote }}
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-products-pvc
+  namespace: {{ .Values.global.namespace }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.postgresProducts.storage }}
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres-products
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: postgres-products
+    {{- include "ecommerce.labels" . | nindent 4 }}
+spec:
+  serviceName: postgres-products
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres-products
+  template:
+    metadata:
+      labels:
+        app: postgres-products
+    spec:
+      containers:
+        - name: postgres
+          image: {{ .Values.postgresProducts.image }}
+          ports:
+            - containerPort: 5432
+          envFrom:
+            - secretRef:
+                name: postgres-products-secret
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", {{ .Values.postgresProducts.secrets.postgresUser | quote }}, "-d", {{ .Values.postgresProducts.secrets.postgresDb | quote }}]
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 5
+          resources:
+            {{- toYaml .Values.postgresProducts.resources | nindent 12 }}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: postgres-products-pvc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-products
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: postgres-products
+    {{- include "ecommerce.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: postgres-products
+  ports:
+    - port: 5432
+      targetPort: 5432
+  clusterIP: None
+
+{{/* ── Orders DB ── */}}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-orders-secret
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: postgres-orders
+    {{- include "ecommerce.labels" . | nindent 4 }}
+type: Opaque
+stringData:
+  POSTGRES_DB: {{ .Values.postgresOrders.secrets.postgresDb | quote }}
+  POSTGRES_USER: {{ .Values.postgresOrders.secrets.postgresUser | quote }}
+  POSTGRES_PASSWORD: {{ .Values.postgresOrders.secrets.postgresPassword | quote }}
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-orders-pvc
+  namespace: {{ .Values.global.namespace }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.postgresOrders.storage }}
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres-orders
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: postgres-orders
+    {{- include "ecommerce.labels" . | nindent 4 }}
+spec:
+  serviceName: postgres-orders
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres-orders
+  template:
+    metadata:
+      labels:
+        app: postgres-orders
+    spec:
+      containers:
+        - name: postgres
+          image: {{ .Values.postgresOrders.image }}
+          ports:
+            - containerPort: 5432
+          envFrom:
+            - secretRef:
+                name: postgres-orders-secret
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", {{ .Values.postgresOrders.secrets.postgresUser | quote }}, "-d", {{ .Values.postgresOrders.secrets.postgresDb | quote }}]
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 5
+          resources:
+            {{- toYaml .Values.postgresOrders.resources | nindent 12 }}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: postgres-orders-pvc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-orders
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: postgres-orders
+    {{- include "ecommerce.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: postgres-orders
+  ports:
+    - port: 5432
+      targetPort: 5432
+  clusterIP: None
